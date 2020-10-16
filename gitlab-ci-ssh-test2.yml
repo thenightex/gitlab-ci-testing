@@ -1,0 +1,40 @@
+# source https://ruleoftech.com/2020/automate-versioning-and-changelog-with-release-it-on-gitlab-ci-cd
+image: docker:19.03.1
+
+stages:
+  - release
+
+Release:
+  stage: release
+  image: node:12-alpine
+  only:
+    - master
+  before_script:
+    - apk add --update openssh-client git
+    # Using Deploy keys and ssh for pushing to git
+    # Run ssh-agent (inside the build environment)
+    - eval $(ssh-agent -s)
+    # Add the SSH key stored in SSH_PRIVATE_KEY variable to the agent store
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    # Create the SSH directory and give it the right permissions
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    # Don't verify Host key
+    - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
+    - git config user.email "gitlab-runner@your-domain.com"
+    - git config user.name "Gitlab Runner"
+  script:
+    # See https://gist.github.com/serdroid/7bd7e171681aa17109e3f350abe97817
+    # Set remote push URL
+    # We need to extract the ssh/git URL as the runner uses a tokenized URL
+    # Replace start of the string up to '@'  with git@' and append a ':' before first '/'
+    - export CI_PUSH_REPO=$(echo "$CI_REPOSITORY_URL" | sed -e "s|.*@\(.*\)|git@\1|" -e "s|/|:/|" )
+    - git remote set-url --push origin "ssh://${CI_PUSH_REPO}"
+    # runner runs on a detached HEAD, checkout current branch for editing
+    - git reset --hard
+    - git clean -fd
+    - git checkout $CI_COMMIT_REF_NAME
+    - git pull origin $CI_COMMIT_REF_NAME
+    # Run release-it to bump version and tag
+    - npm ci
+    - npm run release -- patch --ci --verbose
