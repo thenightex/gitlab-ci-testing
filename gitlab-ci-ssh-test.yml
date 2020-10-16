@@ -1,0 +1,66 @@
+image: node:latest
+cache:
+    paths:
+        - node_modules/
+
+stages:
+  - lint
+  - build
+  - release
+
+lint:
+    stage: lint
+    script:
+        - npm install
+        - npm run lint
+build:
+    stage: build
+    script:
+        - npm install
+        - npm run build
+    artifacts:
+        expire_in: 1h
+        paths:
+            - dist/
+
+deploy:
+    #only:
+    #    - master
+    stage: deploy
+    before_script:
+        # Settings > Repository > Deploy Keys > "DEPLOY_KEY_PUBLIC" is the public key of the utitlized SSH pair
+        # Settings > CI/CD > Variables > "DEPLOY_KEY_PRIVATE" is the private key of the utitlized SSH pair, type is 'File' and ends with empty line
+        - mkdir -p ~/.ssh
+        - chmod 700 ~/.ssh
+        - touch ~/.ssh/known_hosts
+        - chmod 644 ~/.ssh/known_hosts
+        - mv "$DEPLOY_KEY_PRIVATE" ~/.ssh/id_rsa
+        - chmod 400 ~/.ssh/id_rsa
+        - 'which ssh-agent || (apt-get update -y && apt-get install openssh-client git -y)'
+        - eval "$(ssh-agent -s)"
+        - ssh-add ~/.ssh/id_rsa
+        - ssh-keyscan -H $CI_SERVER_HOST >> ~/.ssh/known_hosts
+    script:
+        #- export CI_PUSH_REPO=`echo $CI_BUILD_REPO | perl -pe 's#.*@(.+?(\:\d+)?)/#git@\1:#'`
+        #- git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab/lakrlp/dorg-vuejs-frontend.git
+        - cat ~/.ssh/known_hosts
+        - git clone ssh://git@gitlab/lakrlp/dorg-vuejs-pharmacies.git
+        - mkdir -p dorg-vuejs-frontend/$CI_PROJECT_NAME
+        - cp -a dist/. dorg-vuejs-frontend/$CI_PROJECT_NAME
+        - cd dorg-vuejs-frontend
+        #- npm install -g git-credential-envvar
+        #- git config credential.helper envvar
+        #- git config --global hub.protocol https
+        - touch ~/.gitconfig
+        - git config --global user.name $GITLAB_USER_NAME
+        - git config --global user.email $GITLAB_USER_EMAIL
+        #- echo "https://gitlab-ci-token:$GITLAB_TOKEN@$CI_SERVER_HOST/$CI_PROJECT_PATH.git"
+        #- git remote set-url origin "https://gitlab-ci-token:$GITLAB_TOKEN@$CI_SERVER_HOST/$CI_PROJECT_PATH.git"
+        # - git remote set-url --push origin "${CI_PUSH_REPO}"
+        #- git remote add origin https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab/lakrlp/dorg-vuejs-frontend.git || true
+        - git add --all
+        - git commit -m "release"
+        #- git push https://gitlab/lakrlp/dorg-vuejs-frontend.git HEAD:master || true
+        #- git push
+        - git push
+        #- git push --follow-tags --no-verify "https://gitlab-ci-token:$GITLAB_TOKEN@$CI_SERVER_HOST/$CI_PROJECT_PATH.git" "HEAD:$CI_COMMIT_REF_NAME"
