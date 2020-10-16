@@ -1,3 +1,4 @@
+# https://docs.gitlab.com/ee/ci/yaml/#release
 image: node:latest
 cache:
     paths:
