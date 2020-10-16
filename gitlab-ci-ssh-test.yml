@@ -3,6 +3,8 @@
 # https://stackoverflow.com/questions/57290734/ssh-host-key-verification-failed-inside-gitlab-ci
 # https://gist.github.com/yannhowe/5ab1501156bd84c8ac261e2c17b8e3e0
 # https://gitlab.com/gitlab-org/gitlab-runner/-/issues/2365
+# https://forum.gitlab.com/t/git-push-from-inside-a-gitlab-runner/30554/2
+# https://gitlab.com/ixilon/nukkit-docker/blob/master/.gitlab-ci.yml
 image: node:latest
 cache:
     paths:
