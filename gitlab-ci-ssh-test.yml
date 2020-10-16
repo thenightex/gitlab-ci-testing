@@ -1,3 +1,8 @@
+# weitere infos siehe:
+# https://docs.gitlab.com/ee/ci/ssh_keys/#verifying-the-ssh-host-keys
+# https://stackoverflow.com/questions/57290734/ssh-host-key-verification-failed-inside-gitlab-ci
+# https://gist.github.com/yannhowe/5ab1501156bd84c8ac261e2c17b8e3e0
+# https://gitlab.com/gitlab-org/gitlab-runner/-/issues/2365
 image: node:latest
 cache:
     paths:
