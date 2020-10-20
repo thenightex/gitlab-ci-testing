@@ -1,0 +1,113 @@
+image: 'node:latest'
+variables:
+  PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${CI_PROJECT_NAME}/"
+
+stages:
+  - install_dependencies
+  - lint
+  - build
+  - prepare
+  - upload
+  - release
+
+install_dependencies:
+  stage: install_dependencies
+  cache:
+    key: $CI_COMMIT_REF_SLUG-$CI_PROJECT_DIR
+    paths:
+      - node_modules/
+  script:
+    - npm ci
+  only:
+    changes:
+      - package-lock.json
+
+lint:
+  stage: lint
+  cache:
+    key: $CI_COMMIT_REF_SLUG-$CI_PROJECT_DIR
+    paths:
+      - node_modules/
+    policy: pull
+  script:
+    - npm run lint
+
+build:
+  stage: build
+  only:
+    - master
+  cache:
+    key: $CI_COMMIT_REF_SLUG-$CI_PROJECT_DIR
+    paths:
+      - node_modules/
+    policy: pull
+  artifacts:
+    expire_in: 1h
+    paths:
+      - dist/
+  script:
+    - npm run build
+build_tag:
+  stage: build
+  rules:
+    - if: $CI_COMMIT_TAG
+  cache:
+    key: $CI_COMMIT_REF_SLUG-$CI_PROJECT_DIR
+    paths:
+      - node_modules/
+    policy: pull
+  artifacts:
+    expire_in: 365d
+    paths:
+      - dist/
+  script:
+    - npm run build
+
+prepare_job:
+  stage: prepare
+  only:
+    - master
+  script:
+    - ls -l
+    - apt-get update && apt-get install -yqq jq
+    - export VERSION=$(cat package.json | jq -r .version)
+    - echo "VERSION=$VERSION" >> variables.env
+    - echo "EXTRA_DESCRIPTION=beschreibung" >> variables.env
+    - echo "TAG=v$VERSION" >> variables.env
+    - echo "FILE=$CI_PROJECT_NAME-$VERSION.zip" >> variables.env
+  artifacts:
+    reports:
+      dotenv: variables.env
+
+upload:
+  stage: upload
+  needs:
+    - job: prepare_job
+      artifacts: true
+    - job: build
+      artifacts: true
+  only:
+    - master
+  script:
+    - apt-get update && apt-get install -yqq zip curl
+    - echo $TAG >> dist/VERSION
+    - 'zip -r ${FILE} dist'
+    - 'echo "uploading ${FILE} to ${PACKAGE_REGISTRY_URL}${VERSION}/${FILE}"'
+    - ls -l $FILE
+    - |
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file ${FILE} "${PACKAGE_REGISTRY_URL}${VERSION}/${FILE}"
+
+release:
+  stage: release
+  image: 'registry.gitlab.com/gitlab-org/release-cli:latest'
+  needs:
+    - job: prepare_job
+      artifacts: true
+    - job: upload
+  only:
+    - master
+  script:
+    - 'echo "running release job for tag ${TAG}"'
+    - |
+      release-cli create --name "Release $TAG" --tag-name $TAG \
+        --assets-link "{\"name\":\"${FILE}\",\"url\":\"${PACKAGE_REGISTRY_URL}${VERSION}/${FILE}\"}"
