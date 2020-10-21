@@ -1,0 +1,90 @@
+image: 'node:latest'
+variables:
+  PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/uploads"
+  CACHE_KEY: "$CI_COMMIT_REF_SLUG-$CI_PROJECT_DIR"
+
+
+stages:
+  - install_dependencies
+  - lint
+  - build
+  - prepare_and_upload
+  - release
+
+install_dependencies:
+  stage: install_dependencies
+  cache:
+    key: $CACHE_KEY
+    paths:
+      - node_modules/
+  only:
+    changes:
+      - package-lock.json
+  script:
+    - npm ci
+
+lint:
+  stage: lint
+  cache:
+    key: $CACHE_KEY
+    paths:
+      - node_modules/
+    policy: pull
+  script:
+    - npm run lint
+
+build:
+  stage: build
+  cache:
+    key: $CACHE_KEY
+    paths:
+      - node_modules/
+    policy: pull
+  artifacts:
+    expire_in: 1h
+    paths:
+      - dist/
+  script:
+    - npm run build
+
+prepare_and_upload:
+  stage: prepare_and_upload
+  only:
+    - master
+  artifacts:
+    reports:
+      dotenv: variables.env
+  before_script:
+    - ls -l
+    - apt-get update && apt-get install -yqq jq
+    - export VERSION=$(cat package.json | jq -r .version)
+    - echo "VERSION=$VERSION" >> variables.env
+    - echo "TAG=v$VERSION" >> variables.env
+    - export FILENAME=$CI_PROJECT_NAME-$VERSION.zip
+    - echo "FILENAME=$FILENAME" >> variables.env
+  script:
+    - apt-get update && apt-get install -yqq zip curl
+    - echo $TAG >> dist/VERSION
+    - 'zip -r ${FILENAME} dist'
+    - 'echo "uploading ${FILENAME} to ${PACKAGE_REGISTRY_URL}"'
+    - ls -l $FILENAME
+    - |
+      export FULL_PATH=$(curl --silent --request POST --header "PRIVATE-TOKEN: ${LAKRLP_DEPLOY}" \
+      --form "file=@${FILENAME}" "${PACKAGE_REGISTRY_URL}" | jq -r '.full_path')
+    - echo "${CI_SERVER_URL}${FULL_PATH}"
+    - echo "FULL_PATH=$CI_SERVER_URL$FULL_PATH" >> variables.env
+
+release:
+  stage: release
+  image: 'registry.gitlab.com/gitlab-org/release-cli:latest'
+  needs:
+    - job: prepare_and_upload
+      artifacts: true
+  only:
+    - master
+  script:
+    - 'echo "running release job for tag ${TAG}"'
+    - 'echo "attaching upload ${FULL_PATH}"'
+    - |
+      release-cli create --name "Release $TAG" --tag-name $TAG \
+        --assets-link "{\"name\":\"${FILENAME}\",\"url\":\"${FULL_PATH}\"}"
