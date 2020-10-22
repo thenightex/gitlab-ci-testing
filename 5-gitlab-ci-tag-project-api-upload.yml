@@ -3,13 +3,13 @@ variables:
   PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/uploads"
   CACHE_KEY: "$CI_COMMIT_REF_SLUG-$CI_PROJECT_DIR"
 
-
 stages:
   - install_dependencies
   - lint
   - build
   - prepare_and_upload
   - release
+  - notify
 
 install_dependencies:
   stage: install_dependencies
@@ -20,6 +20,8 @@ install_dependencies:
   only:
     changes:
       - package-lock.json
+  except:
+    - tags
   script:
     - npm ci
 
@@ -30,6 +32,8 @@ lint:
     paths:
       - node_modules/
     policy: pull
+  except:
+    - tags
   script:
     - npm run lint
 
@@ -44,13 +48,20 @@ build:
     expire_in: 1h
     paths:
       - dist/
+  except:
+    - tags
   script:
     - npm run build
 
 prepare_and_upload:
   stage: prepare_and_upload
   only:
-    - master
+    refs:
+      - master
+    changes:
+      - package.json
+  except:
+    - tags
   artifacts:
     reports:
       dotenv: variables.env
@@ -64,15 +75,23 @@ prepare_and_upload:
     - echo "FILENAME=$FILENAME" >> variables.env
   script:
     - apt-get update && apt-get install -yqq zip curl
-    - echo $TAG >> dist/VERSION
-    - 'zip -r ${FILENAME} dist'
+    - echo $VERSION >> dist/VERSION.txt
+    - cd dist
+    - 'zip -r ${FILENAME} .'
     - 'echo "uploading ${FILENAME} to ${PACKAGE_REGISTRY_URL}"'
     - ls -l $FILENAME
-    - |
-      export FULL_PATH=$(curl --silent --request POST --header "PRIVATE-TOKEN: ${LAKRLP_DEPLOY}" \
-      --form "file=@${FILENAME}" "${PACKAGE_REGISTRY_URL}" | jq -r '.full_path')
+    - >
+      export FULL_PATH=$(
+      curl
+      --header "PRIVATE-TOKEN: ${LAKRLP_DEPLOY}"
+      --silent
+      --request POST
+      --form "file=@${FILENAME}"
+      "${PACKAGE_REGISTRY_URL}" | jq -r '.full_path')
     - echo "${CI_SERVER_URL}${FULL_PATH}"
+    - cd ..
     - echo "FULL_PATH=$CI_SERVER_URL$FULL_PATH" >> variables.env
+    - cat variables.env
 
 release:
   stage: release
@@ -81,10 +100,35 @@ release:
     - job: prepare_and_upload
       artifacts: true
   only:
-    - master
+    refs:
+      - master
+    changes:
+      - package.json
+  except:
+    - tags
   script:
+    - export
     - 'echo "running release job for tag ${TAG}"'
     - 'echo "attaching upload ${FULL_PATH}"'
-    - |
-      release-cli create --name "Release $TAG" --tag-name $TAG \
-        --assets-link "{\"name\":\"${FILENAME}\",\"url\":\"${FULL_PATH}\"}"
+    - >
+      release-cli create
+      --name "Release $TAG" --tag-name $TAG
+      --assets-link "{\"name\":\"${FILENAME}\",\"url\":\"${FULL_PATH}\"}"
+
+notify:
+  stage: notify
+  only:
+    refs:
+      - master
+    changes:
+      - package.json
+  except:
+    - tags
+  script:
+    - >
+      curl -s --user "api:$MAILGUN_API_KEY"
+      "https://api.mailgun.net/v3/$MAILGUN_DOMAIN/messages"
+      -F from='Gitlab <gitlab@gitlab.sberg.net>'
+      -F "to=$GITLAB_USER_EMAIL"
+      -F "subject=Gitlab CI - ${CI_PROJECT_NAME}"
+      -F "text=Projekt ${CI_PROJECT_NAME} - Tag ${TAG} - abgeschlossen"
