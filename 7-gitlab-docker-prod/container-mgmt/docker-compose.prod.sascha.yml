@@ -1,0 +1,19 @@
+version: '3.3'
+services:
+  elbook-springboot:
+    # Image From Gitlab - predeployed
+    image: GITLAB_URL:5050/ti/elbook/elbook-springboot:${CI_COMMIT_TAG}
+    # Profile Default
+    entrypoint: "java -jar /opt/elbook/app.jar --spring.profiles.active=default"
+    # Custom
+    volumes:
+      - /var/lib/elbook/springboot/logs:/logs
+      - /var/lib/elbook/springboot/data:/data
+    ports:
+      - '9080:8080'
+  elbook-mariadb:
+    # Image From Gitlab - predeployed
+    image: GITLAB_URL:5050/ti/elbook/elbook-mariadb:${CI_COMMIT_TAG}
+    # Custom
+    volumes:
+      - /var/lib/elbook/mariadb-db/:/var/lib/mysql

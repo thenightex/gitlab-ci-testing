@@ -1,0 +1,27 @@
+version: '3.3'
+services:
+  elbook-springboot:
+    restart: always
+    container_name: elbook-springboot
+    build:
+      context: ./springboot
+      dockerfile: Dockerfile
+    volumes:
+      - ../container-volumes/springboot/logs:/logs
+      - ../container-volumes/springboot/data:/data
+    links:
+      - elbook-mariadb
+    expose:
+      - 8080
+
+  elbook-mariadb:
+    restart: always
+    container_name: elbook-mariadb
+    build:
+      context: ./mariadb
+      dockerfile: Dockerfile
+    environment:
+      MYSQL_ROOT_PASSWORD: "PASSWORD"
+      MYSQL_ALLOW_EMPTY_PASSWORD: "no"
+    volumes:
+      - ../container-volumes/mariadb-db/:/var/lib/mysql

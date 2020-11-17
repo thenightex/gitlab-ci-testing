@@ -1,0 +1,31 @@
+version: '3.3'
+services:
+  ######### STANDARD SERVICES #########
+  elbook-springboot:
+    # Standard
+    image: GITLAB_URL:5050/ti/elbook/elbook-springboot:${CI_COMMIT_TAG}
+    entrypoint: "java -jar /opt/elbook/app.jar --spring.profiles.active=default"
+    # Custom
+    hostname: hostname.url.com
+    environment:
+      # Setting for nginx-proxy service
+      VIRTUAL_HOST: 'hostname.url.com'
+      VIRTUAL_PORT: '8080'
+  elbook-mariadb:
+    # Standard
+    image: GITLAB_URL:5050/ti/elbook/elbook-mariadb:${CI_COMMIT_TAG}
+  ######### CUSTOM SERVICES #########
+  nginx-proxy:
+    image: jwilder/nginx-proxy
+    restart: always
+    container_name: nginx-proxy
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - '/var/run/docker.sock:/tmp/docker.sock:ro'
+      - '../container-volumes/nginx/certs:/etc/nginx/certs'
+      - '../container-volumes/nginx/vhost.d:/etc/nginx/vhost.d'
+      - '../container-volumes/nginx/logs:/var/log/nginx'
+    links:
+      - 'elbook-springboot'

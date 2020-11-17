@@ -1,0 +1,7 @@
+version: '3.3'
+services:
+  elbook-springboot:
+    image: GITLAB_URL:5050/ti/elbook/elbook-springboot:${TAGVERSION}
+    entrypoint: "java -jar /opt/elbook/app.jar --spring.profiles.active=default"
+  elbook-mariadb:
+    image: GITLAB_URL:5050/ti/elbook/elbook-mariadb:${TAGVERSION}

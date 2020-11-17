@@ -1,0 +1,3 @@
+[mysqld]
+query_cache_limit = 1M
+thread_stack = 192K
