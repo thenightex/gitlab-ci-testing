@@ -1,0 +1,88 @@
+stages:
+  - build-mvn
+  - build-docker
+  - tag-version
+  - release-prod
+  - stop-prod
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  MAVEN_OPTS: '-Dmaven.repo.local=.m2/repository'
+  CONTAINER_RELEASE_IMAGE: $CI_REGISTRY_IMAGE:latest
+  CONTAINER_TEST_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+  COMPOSE_PATH: /var/lib/elbook/container-mgmt/
+
+maven-build:
+  stage: build-mvn
+  tags: [docker]
+  except: [tags]
+  image: maven:3-jdk-8
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths: [.m2/repository]
+  artifacts:
+    paths: [target/*.jar]
+    reports:
+      dotenv: variables.env
+  script:
+    - 'cp .ci/ci_settings.xml /root/.m2/settings.xml'
+    - 'mvn package -B -Dmaven.test.skip=true'
+    - export TAGVERSION=$(mvn --non-recursive help:evaluate -Dexpression=project.version | grep -v '\[.*')
+    - echo "TAGVERSION=$TAGVERSION" >> variables.env
+    - cat variables.env
+
+docker-build:
+  stage: build-docker
+  tags: [docker]
+  only: [branches, release]
+  image: tmaier/docker-compose:latest
+  services:
+    - name: docker:19.03.12-dind
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - cp target/*.jar dockerimagedef/container-mgmt/springboot/elbook.jar || true
+    - cd dockerimagedef/container-mgmt/
+    - docker-compose -f docker-compose.yml -f docker-compose.prod.deploy.yml build
+    - docker-compose -f docker-compose.yml -f docker-compose.prod.deploy.yml push
+
+tag_version:
+  stage: tag-version
+  tags: [ docker ]
+  image: curlimages/curl
+  needs:
+    - job: maven-build
+      artifacts: true
+  only: [branches, release]
+  script:
+    - export TAGNAME=$TAGVERSION
+    - "export CURL_RETURN=$(curl -s -o /dev/null -w \"%{http_code}\" --request POST --header \"PRIVATE-TOKEN: $GITLAB_ACCESS_TOKEN\" \"https://gitlab.sberg.net/api/v4/projects/$CI_PROJECT_ID/repository/tags?tag_name=$TAGNAME&ref=release\")"
+    - "if [ $CURL_RETURN -ne 201 ]; then echo \"ERROR: Error creating tag or tag already exists $TAGNAME\" && exit 1; else exit 0; fi"
+
+.release_prod:
+  stage: release-prod
+  only: [tags]
+  before_script:
+    - docker login -u $CI_DEPLOY_USER -p $CI_DEPLOY_PASSWORD $CI_REGISTRY
+    - export ENV_NAME="$(basename $CI_ENVIRONMENT_NAME)"
+  script:
+    - mkdir -p $COMPOSE_PATH
+    - cd dockerimagedef/container-mgmt/
+    - cp -R ./{mariadb,springboot,docker-compose.yml,docker-compose.prod.$ENV_NAME.yml} $COMPOSE_PATH
+    - "docker-compose -f docker-compose.yml -f docker-compose.prod.$ENV_NAME.yml rm -s"
+    - "docker-compose -f docker-compose.yml -f docker-compose.prod.$ENV_NAME.yml pull"
+    - "docker-compose -f docker-compose.yml -f docker-compose.prod.$ENV_NAME.yml up -d --no-build"
+  when: manual
+
+.stop_prod:
+  stage: stop-prod
+  only: [tags]
+  before_script:
+    - export ENV_NAME="$(basename $CI_ENVIRONMENT_NAME)"
+  script:
+    - cd dockerimagedef/container-mgmt/
+    - "docker-compose -f docker-compose.yml -f docker-compose.prod.$ENV_NAME.yml down"
+  when: manual
+
+include: '.ci/.gitlab-ci-servers.yml'

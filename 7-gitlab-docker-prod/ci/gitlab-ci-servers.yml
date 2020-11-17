@@ -1,0 +1,31 @@
+######### CONFIG SASCHA #########
+release_prod_SASCHA:
+  extends: .release_prod
+  tags: [prod, sascha]
+  environment:
+    name: production/sascha
+    url: http://thenightex.de:9080/
+    on_stop: stop_prod_SASCHA
+
+stop_prod_SASCHA:
+  extends: .stop_prod
+  tags: [prod, sascha]
+  environment:
+    name: production/sascha
+    action: stop
+
+######### CONFIG SBERG #########
+release_prod_SBERG:
+  extends: .release_prod
+  tags: [prod, sberg]
+  environment:
+    name: production/sberg
+    url: https://elbook.sberg.net/
+    on_stop: stop_prod_SBERG
+
+stop_prod_SBERG:
+  extends: .stop_prod
+  tags: [prod, sberg]
+  environment:
+    name: production/sberg
+    action: stop
